@@ -1,0 +1,70 @@
+Function Get-VMWHostTimeSettings {
+    <#
+	.Synopsis
+	Checks VMHosts or time settings and configuration.
+
+	.NOTES
+	Name       : Get-VMWHostTimeSettings
+	Author     : Hugh Macpherson
+	Version    : 1.0
+	DateCreated: 2017-05-12
+	DateUpdated: 2017-05-13
+
+	.EXAMPLE
+	Get-VMWHostTimeSettings
+
+    VMHost          : esxihost01.example.com
+    CurrentTime     : 12/05/2017 20:59:53
+    Timzeone        : UTC
+    NTPDaemon       : Stopped
+    NTPDaemonpolicy : automatic
+    NTPFirewallRule : NTP Client
+    NTPServers      : time.example.com
+
+	#>
+    BEGIN {
+            #Create an array of VM Hosts that can be queried:
+            #$array_of_VMHosts = @()
+            $VMHosts = Get-VMHost | Sort-Object
+    } #End BEGIN
+
+    PROCESS {
+        #Go through each VMHost and grab details:
+        foreach ($VMHost in $VMHosts) {
+            TRY {
+                $NTPFirewallRule = Get-VMHostFirewallException -VMHost $VMHost.name | where {$_.Name -eq "NTP client"} -ErrorAction Stop
+                $NTPService = Get-VmHostService -VMHost $vmhost.name | Where-Object {$_.key -eq "ntpd"} -ErrorAction Stop
+                $CurrentTime = (Get-View $VMHost.ExtensionData.ConfigManager.DateTimeSystem).QueryDateTime()
+                    If ($NTPService.Running -eq "False") {
+                        $NTPDaemon = "Stopped"
+                    }
+                    ELSE {
+                        $NTPDaemon = "Started"
+                    }
+                $properties = [ordered]@{
+                              'VMHost'          = $VMHost.name
+                              'CurrentTime'     = $CurrentTime
+                              'Timzeone'        = $VMHost.Timezone
+                              'NTPDaemon'       = $NTPDaemon
+                              'NTPDaemonpolicy' = $NTPService.policy
+                              'NTPFirewallRule' = $NTPFirewallRule
+                              'NTPServers'      = Get-VMHostNtpServer $VMHost.name}
+            } #End TRY
+            CATCH {
+                $properties = [ordered]@{
+                              'VMHost'          = $VMHost.name
+                              'CurrentTime'     = $null
+                              'Timzeone'        = $null
+                              'NTPDaemon'       = $null
+                              'NTPDaemonpolicy' = $null
+                              'NTPFirewallRule' = $null
+                              'NTPServers'      = $null}
+            } #End CATCH
+            FINALLY {
+                $obj = New-Object -TypeName PSObject -Property $properties
+                       Write-Output $obj
+            } #End FINALLY
+        } #End ForEach
+    } #End PROCESS
+    END {}
+}
