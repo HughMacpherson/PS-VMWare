@@ -18,7 +18,7 @@ Function Get-VMWHostTimeSettings {
     Timzeone        : UTC
     NTPDaemon       : Stopped
     NTPDaemonpolicy : automatic
-    NTPFirewallRule : NTP Client
+    NTPFirewallRule : False
     NTPServers      : time.example.com
 
 	#>
@@ -47,7 +47,7 @@ Function Get-VMWHostTimeSettings {
                               'Timzeone'        = $VMHost.Timezone
                               'NTPDaemon'       = $NTPDaemon
                               'NTPDaemonpolicy' = $NTPService.policy
-                              'NTPFirewallRule' = $NTPFirewallRule
+                              'NTPFirewallRule' = $NTPFirewallRule.Enabled
                               'NTPServers'      = Get-VMHostNtpServer $VMHost.name}
             } #End TRY
             CATCH {
