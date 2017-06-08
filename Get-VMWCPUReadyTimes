@@ -1,0 +1,66 @@
+function Get-VMWCPUReadyTimes {
+	[CmdletBinding()]
+			param (
+					[Parameter(Mandatory=$false,
+										 Position=0,
+										 ValueFromPipeline=$true,
+										 ValueFromPipelineByPropertyName=$true,
+										 HelpMessage="The virtual machine name, or if not specified all VM's in the Virtual Center")]
+					[string[]]$VirtualMachine={vmware.vimautomation.core\get-vm | sort}
+			) #Closes Param
+	<#
+	.Synopsis
+	Checks vSphere CPU Ready Times reports them.
+
+	.NOTES
+	Name       : Get-VMWCPUReadyTimes
+	Author     : Hugh Macpherson
+	Version    : 1.0
+	DateCreated: 2017-05-05
+	DateUpdated: 2017-05-05
+
+	.EXAMPLE
+	Get-VMWCPUReadyTimes
+
+	#>
+		BEGIN {} #Begin
+		PROCESS {
+		        ForEach ($VM in $VirtualMachine) {
+                    TRY {
+                        $CPU = vmware.vimautomation.core\Get-VM $VM.name | vmware.vimautomation.core\get-stat -stat cpu.ready.summation -MaxSamples 1 -IntervalSecs 300 –ErrorAction Stop
+                        $Start = (Get-Date).AddDays(-14)
+                        $Finish = Get-Date
+                        #Gets the CPU Usage percentage
+                        $stats_percent = vmware.vimautomation.core\Get-VM $VM.name | 
+                                         vmware.vimautomation.core\Get-Stat -MaxSamples "1000" -Start $Start -Finish $Finish -Stat Cpu.Ready.Summation | 
+                                         ? { ($_.TimeStamp).Hour -gt 1 -and ($_.TimeStamp).Hour -lt 24 -and $_.Instance -eq ""}  
+                        $aggr_stats = $stats_percent | Measure-Object -Property Value -Average  
+                        #Gets the CPU Usage average
+                        $stats_average = vmware.vimautomation.core\Get-VM $VM.name | 
+                                         vmware.vimautomation.core\Get-Stat -MaxSamples "1000" -Start $Start -Finish $Finish -Stat "cpu.usage.average" | 
+                                         ? { ($_.TimeStamp).Hour -gt 1 -and ($_.TimeStamp).Hour -lt 24 }
+                        $aggr_stats1 = $stats_average | Measure-Object -Property Value -Average 
+
+					    $properties = [ordered]@{'Name'     = $vm.Name
+									             'VMhost'   = $vm.VMHost
+									             'vCpus'    = $vm.NumCpu
+                                                 'CPUUsage%' = [Math]::Round(((($aggr_stats.Average)/1000)/7200) * 100,1)
+                                                 'CPUUageAvg' = [Math]::Round($aggr_stats1.Average,1)
+									             'CPUready' = $CPU.value}
+                    } CATCH {
+                        Write-Verbose "Couldn't retrieve CPUReady Times"
+                        $properties = [ordered]@{'Name' 	= $vm.Name
+									             'VMhost'   = $vm.VMHost
+									             'vCPUs'    = $vm.NumCpu
+                                                 'CPUUsage%' = $null
+                                                 'CPUUageAvg' = $null
+									             'CPUready' = $null}
+                    }Finally {
+					    $obj = New-Object -TypeName PSObject -Property $properties
+					    $obj.PSObject.TypeNames.Insert(0,'Report.vShere_CPUReady')
+                        Write-Output $obj
+                    }
+		        } #Foreach
+		} #Process
+		END {} #END
+} #Function Get-VMWCPUReadyTimes
