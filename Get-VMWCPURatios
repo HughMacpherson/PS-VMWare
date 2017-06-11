@@ -1,0 +1,48 @@
+function Get-VMWCPURatios {
+	[CmdletBinding()]
+		param (
+			[Parameter(Mandatory=$false,
+						Position=0,
+						ValueFromPipeline=$true,
+						ValueFromPipelineByPropertyName=$true,
+						HelpMessage="The vSphere cluster you want to check")]
+			[string[]]$Cluster="*"
+		) #Closes Param
+	<#
+	.Synopsis
+	Checks vSphere CPU ration between Virtual and Physical CPU's.
+
+	.NOTES
+	Name       : Get-VMWCPURatios
+	Author     : Hugh Macpherson
+	Version    : 1.0
+	DateCreated: 2017-03-05
+	DateUpdated: 2017-05-05
+
+	.EXAMPLE
+	PS Get-VMWCPURatios
+
+    VMHost                 Cluster     PhysicalCPUs     VirtualCPUs     Ratio     VMCount
+    ------                 -------     ------------     -----------     -----     -------
+    ESXi001.example.com    Glasgow                4               8         2           7
+    ESXi001.example.com    Glasgow                4              28         7          21
+
+	#>
+	BEGIN {} #Begin
+	PROCESS {
+        $VMHosts = vmware.vimautomation.core\Get-Cluster -Name $Cluster | vmware.vimautomation.core\Get-VMHost
+        Foreach($VMhost in vmware.vimautomation.core\Get-VMHost) {
+            $vCPU = vmware.vimautomation.core\Get-VM -Location $VMHost | Measure-Object -Property NumCpu -Sum | select -ExpandProperty Sum
+            $properties = [ordered]@{'VMHost'      = $VMHost.Name
+	                                'Cluster'      = $VMHost | vmware.vimautomation.core\get-cluster | Select -ExpandProperty name
+	                                'PhysicalCPUs' = $VMHost.NumCpu
+	                                'VirtualCPUs'  = $vCPU
+	                                'Ratio'        = [math]::Round($vCPU/$VMHost.NumCpu,1)
+                                    'VMCount'      = (vmware.vimautomation.core\Get-VMhost $VMHost | Get-View).VM | Get-VIObjectByVIView | measure | select -ExpandProperty Count
+            }
+            $obj = New-Object -TypeName PSObject -Property $properties
+            Write-Output $obj
+        } #ForEach
+    } #PROCESS
+    END {} #End
+} #Function
