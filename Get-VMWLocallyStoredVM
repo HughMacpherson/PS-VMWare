@@ -1,0 +1,45 @@
+Function Get-VMWLocallyStoredVM {
+	<#
+	.Synopsis
+	Checks for storage that is not attatched to multiple hosts for VM's stored on local storage.
+
+	.NOTES
+	Name       : Get-VMWLocallyStoredVM
+	Author     : Hugh Macpherson
+	Version    : 1.0
+	DateCreated: 2017-02-10
+	DateUpdated: 2017-02-18
+
+	.EXAMPLE
+	PS :> Get-VMWLocallyStoredVM
+    
+    VirtualMachine : Greylog
+    VMHost         : ESXi01.hnet.internal
+    Datastore      : ESXi01-Local
+    VMDK           : Greylog.vmdk
+    DiskName       : Hard disk 1
+    StorageFormat  : Thin
+    CapacityGB     : 100
+
+	Description:
+
+	#>
+        $DatastoresL = Get-Datastore | Get-View | Where-Object {$_.summary.multiplehostaccess -eq $false}
+        $Datastores = Get-Datastore -Name $DatastoresL.Name
+        ForEach ($Datastore in $Datastores) {
+        $vDisks = $Datastore | Get-VM |Get-HardDisk
+            ForEach ($vDisk in $vDisks) {
+                $properties = [ordered]@{
+                                        'VirtualMachine' = $vDisk.Parent
+	                                    'VMHost'         = (Get-vm $vDisk.Parent | Get-VMHost).Name
+	                                    'Datastore'      = $vDisk.FileName.Split(']')[0].TrimStart('[')
+	                                    'VMDK'           = $vDisk.FileName.Split('/')[1].TrimStart(' ')
+	                                    'DiskName'       = $vDisk.Name
+                                        'StorageFormat'  = $vDisk.StorageFormat
+                                        'CapacityGB'     = $vDisk.CapacityGB
+                } #Hashtable
+                $obj = New-Object -TypeName PSObject -Property $properties
+                Write-Output $obj
+            } #Foreach vDisk
+        } #ForEach Datastore
+} #Function
