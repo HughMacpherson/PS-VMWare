@@ -1,0 +1,113 @@
+Function Clone-VMWvSwitch {
+	<#
+	.Synopsis
+	    Clones one or more standard vswitches to one or more hosts.
+
+	.NOTES
+	    Name       : Clone-VMWvSwitch
+	    Author     : Hugh Macpherson
+	    Version    : 1.0
+	    DateCreated: 2016-08-10
+	    DateUpdated: 2017-06-13
+    
+    .PARAMETER ExportHost
+        Host that you want to clone the vswitch from
+    
+    .PARAMETER vSwitchName
+        vSwitch that you want to clone on the ExportHost 
+           
+    .PARAMETER ImportHost
+        Host that you want to clone to.
+
+	.EXAMPLE
+	    PS:\> Mirror-VMWvSwitch -Exporthost ESX01 -vswitch vswitch2,vswitch3 -Exporthost ESX02,ESX03,ESX04
+        WARNING: vSwitch vswitch2 already exists on ESX02, will continue and add any missing PortGroups
+        WARNING: Test portgroup already exists on ESX2, skipping.
+        WARNING: Test0 portgroup already exists on ESX2, skipping.
+        WARNING: Test2 portgroup already exists on ESX2, skipping.
+        vSwitch configured successfully on ESX2
+
+        MirroredHost    vSwitch     OrignalPorts     MirroredPorts
+        ------------    -------     ------------     -------------
+        WSX01           vSwitch2               3                 3
+
+
+	Description:
+
+	#>
+
+    [CmdletBinding()]
+	PARAM(
+		[Parameter(Mandatory=$true,Position=0)]
+        [string]$ExportHost,
+		[Parameter(Mandatory=$true,Position=1)]
+        [string[]]$vSwitchName,
+		[Parameter(Mandatory=$true,Position=2)]
+        [string[]]$ImportHost,
+        [switch]$Clobber
+    )
+
+    ForEach ($vSwitch in $vSwitchName) {
+    #Get the source vSwitch and do error checking
+        $sVSwitch = get-vmhost $ExportHost | get-virtualswitch -name $vSwitch  -errorAction silentlycontinue
+        if (!($sVSwitch)) {
+           write-Error "$vSwitch was not found on $ExportHost"
+        }
+        $sPortGroups = $sVSwitch | get-virtualportgroup
+
+        $thisHost = get-vmhost $ImportHost
+        Foreach ($DestHost in $ImportHost) {
+            $DestHost = Get-VMHost $DestHost
+            IF ($DestHost | get-virtualSwitch -name $vSwitch -errorAction silentlycontinue) {   
+               IF ((($DestHost | get-virtualSwitch -name $vSwitch).uid) -like "*DistributedSwitch*") {
+                  write-Error "$vSwitch is already exists as a Distributed vSwitch on Host $DestHost."
+               }
+               ELSE {
+                  IF ($Clobber) {
+                    Write-Warning "$vSwitch already exists on $DestHost, will continue and add missing PortGroups"
+                    
+                  }
+                  ELSE {
+                    Write-Error "$vSwitch already exists on $DestHost, Exiting"
+                    break
+                  }
+               }
+            }
+            ELSE {
+               $DestHost | new-virtualSwitch -name $sVSwitch.name > $null
+            }
+
+            $destSwitch = $DestHost | get-virtualSwitch -name $sVSwitch.name
+            foreach ($PortGroup in $sPortGroups) {
+               if ($destSwitch | get-virtualportgroup -name "$($PortGroup.Name)" -errorAction silentlycontinue) {
+                  Write-Warning "$($PortGroup.Name) portgroup already exists on $DestHost, skipping."
+               }
+               else {
+                  Write-host "Creating Port Group: $($PortGroup.Name) on $DestHost."
+                  new-virtualportgroup -virtualswitch $destSwitch -name "$($PortGroup.Name)" > $null
+                  #Assign a VLAN tag if there is one on the source Port Group
+                  if ($PortGroup.vlanid -ne 0) {
+                     get-virtualportgroup -virtualswitch $destSwitch -name "$($PortGroup.Name)" | Set-VirtualPortGroup -vlanid $PortGroup.vlanid > $null
+                  } # IF Assign VLAN to Portgroup      
+               } #Else Add PortGroup
+            } #ForEach PortGroup
+
+            $orignalPortCount = get-virtualportgroup -virtualswitch $sVSwitch
+            $mirrorPortCount = get-virtualportgroup -virtualswitch $destSwitch
+            IF ($mirrorPortCount.count -lt $orignalPortCount.count) {
+                Write-Warning "vSwitch $sVSwitch has less ports than orignal Clone on $DestHost, please check manually"
+            }
+            ELSE {
+                $properties = [ordered]@{
+                                        'MirroredHost'  = $DestHost.name
+	                                    'vSwitch'       = $sVSwitch
+	                                    'OrignalPorts'  = $orignalPortCount.count
+                                        'MirroredPorts' = $mirrorPortCount.count
+                } #Hashtable
+                $obj = New-Object -TypeName PSObject -Property $properties
+                Write-host "vSwitch $sVSwitch configured successfully on $DestHost" -ForegroundColor Green
+                Write-Output $obj
+            } #Else Write Output
+        } #Foreach Host
+    } #ForEach vSwitch
+} #Function
